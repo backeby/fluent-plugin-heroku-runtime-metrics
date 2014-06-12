@@ -1,8 +1,10 @@
 # <match **>
 #   type heroku-runtime-metrics
 # </match>
-class Fluent::HerokuRuntimeMetricsOutput < Fluent::Output
+class Fluent::HerokuRuntimeMetricsOutput < Fluent::BufferedOutput
   Fluent::Plugin.register_output('heroku-runtime-metrics', self)
+
+  include Fluent::HandleTagNameMixin
 
   config_param :key, :string, default: 'message'
   config_param :prefix, :string, default: 'hrm_'
@@ -25,9 +27,18 @@ class Fluent::HerokuRuntimeMetricsOutput < Fluent::Output
     end
   end
 
-  def emit(tag, es, chain)
-    chain.next
-    es.each { |time, record| Fluent::Engine.emit tag, time, parse(record) }
+  def format(tag, time, record)
+    [tag, time, record].to_msgpack
+  end
+
+  def write(chunk)
+    chunk.msgpack_each do |tag, time, record|
+      Fluent::Engine.emit(tag, time, record)
+    end
+  end
+
+  def filter_record(tag, time, record)
+    super tag, time, parse(record)
   end
 
   LOADAVG_KEYS = %w(sample#load_avg_1m sample#load_avg_5m sample#load_avg_15m)
